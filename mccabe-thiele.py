@@ -107,33 +107,55 @@ class McCabe_Thiele:
         # Initializing variables for the stage calculations
         # Number of theoretical stages
         num = 0
-        # x-coordinate of the equilibrium curve
-        xE = [xD]
-        # y-coordinate of the operation line
-        xO = [xD]
+        # There are three points in each stage, namely P1, P2 and P3
+        P1 = []
+        P2 = []
+        P3 = [(xD,xD)]
+        
         points = []
         
         # Stage calculations loop
-        while xO[-1] > xW:      # The procedure stops only when the minimum value,
+        while P3[-1][0] > xW:      # The procedure stops only when the minimum value,
             num += 1            # xW, is attained
             # Rectifying line as the base of the stage
-            if xE[-1] >= xQ:
-                # Defining new coordinates
-                xE.append(self.eqcurve(xO[-1]))
-                xO.append(self.rectline(xE[-2]))
-                
+            if P3[-1][0] >= xQ:
                 # New points
-                P1 = (xE[-2],xO[-1])
-                P2 = (self.eqcurve(P1[1]),P1[1])
-                P3 = (P2[0],self.rectline(xE[-1]))
+                # Point 1, located on the rectifying line, equal to P3 calculated
+                # at the previous step
+                xP1 = P3[-1][0]
+                yP1 = P3[-1][1]
+                P1.append((xP1,yP1))
                 
+                # Point 2, located on the equilibrium curve, same vapor molar
+                # fraction as Point 1
+                # Equilibrium curve interpolator is used to calculate the liquid
+                # molar fraction
+                yP2 = yP1
+                xP2 = self.eqcurve(yP2)
+                P2.append((xP2,yP2))
+                
+                # Point 3, located on the operation line, the choice of the
+                # operation line depends upon whether the liquid fraction is
+                # higher than that calculated at the feed point; it has the
+                # same liquid molar fraction as Point 2
+                # Operation curve interpolator is used to calculate the vapor
+                # molar fraction
+                xP3 = xP2
+                if xP3 >= xQ:
+                    yP3 = self.rectline(xP3)
+                else:
+                    yP3 = self.stline(xP3)
+                P3.append((xP3,yP3))
+                
+                # These variables store the coordinates in order to draw the
+                # stages
                 # x-coordinates
-                x12 = (P1[0],P2[0])
-                x23 = (P2[0],P3[0])
+                x12 = (xP1,xP2)
+                x23 = (xP2,xP3)
                 
                 # y-coordinates
-                y12 = (P1[1],P2[1])
-                y23 = (P2[1],P3[1])
+                y12 = (yP1,yP2)
+                y23 = (yP2,yP3)
                 
                 # Stage lines
                 line_1 = [x12,y12]
@@ -141,32 +163,43 @@ class McCabe_Thiele:
                 
                 # List containing the coordinates of all stage lines
                 points.append([line_1,line_2])
-                print(xO[-1],'rect')
             # Stripping line as the base of the stage
-            elif xE[-1] < xQ:
-                # Defining new coordinates
-                xE.append(self.eqcurve(xO[-1]))
-                try:
-                    xO.append(self.stline(xE[-2]))
-                except:
-                    xO.append(xW)
-                
+            elif P3[-1][0] < xQ:
                 # New points
-                P1 = (xE[-2],xO[-1])
-                print(P1)
-                P2 = (self.eqcurve(P1[1]),P1[1])
-                try:
-                    P3 = (P2[0],self.stline(xE[-1]))
-                except:
-                    P3 = (P2[0],xW)
+                # Point 1, located on the rectifying line, equal to P3 calculated
+                # at the previous step
+                xP1 = P3[-1][0]
+                yP1 = P3[-1][1]
+                P1.append((xP1,yP1))
                 
+                # Point 2, located on the equilibrium curve, same vapor molar
+                # fraction as Point 1
+                # Equilibrium curve interpolator is used to calculate the liquid
+                # molar fraction
+                yP2 = yP1
+                xP2 = self.eqcurve(yP2)
+                P2.append((xP2,yP2))
+                
+                # Point 3, located on the stripping line, it has the same liquid
+                # molar fraction as Point 2
+                # Stripping curve interpolator is used to calculate the vapor
+                # molar fraction
+                xP3 = xP2
+                try:
+                    yP3 = self.stline(xP3)
+                except:
+                    yP3 = xP3
+                P3.append((xP3,yP3))
+                
+                # These variables store the coordinates in order to draw the
+                # stages
                 # x-coordinates
-                x12 = (P1[0],P2[0])
-                x23 = (P2[0],P3[0])
+                x12 = (xP1,xP2)
+                x23 = (xP2,xP3)
                 
                 # y-coordinates
-                y12 = (P1[1],P2[1])
-                y23 = (P2[1],P3[1])
+                y12 = (yP1,yP2)
+                y23 = (yP2,yP3)
                 
                 # Stage lines
                 line_1 = [x12,y12]
@@ -174,7 +207,6 @@ class McCabe_Thiele:
                 
                 # List containing the coordinates of all stage lines
                 points.append([line_1,line_2])
-                print(xO[-1],'strip')
         self.points = points
         self.number = num
                 
@@ -189,16 +221,26 @@ class McCabe_Thiele:
         fig, axs = plt.subplots()
         axs.plot([0,1],[0,1],'k')
         axs.plot(xA,yA,'k')
-        axs.plot(self.rect_points[0],self.rect_points[1],'k')
-        axs.plot(self.feed_points[0],self.feed_points[1],'k')
-        axs.plot(self.st_points[0],self.st_points[1],'k')
+        axs.plot(self.rect_points[0],self.rect_points[1],'#0080FF',label='Rectifying')
+        axs.plot(self.feed_points[0],self.feed_points[1],'#FF8000',label='Feed')
+        axs.plot(self.st_points[0],self.st_points[1],'#808080',label='Stripping')
+        num = 0
         for line in self.points:
-            axs.plot(line[0][0],line[0][1],'k')
-            axs.plot(line[1][0],line[1][1],'k')
-        axs.plot([xD,xD],[0,xD],'k--')
-        axs.plot([xF,xF],[0,xF],'k--')
-        axs.plot([xW,xW],[0,xW],'k--')
+            num += 1
+            axs.plot(line[0][0],line[0][1],color='lightsalmon',linestyle='--')
+            axs.plot(line[1][0],line[1][1],color='lightsalmon',linestyle='--')
+            axs.plot(line[0][0][1],line[0][1][1],linestyle=None,marker='o',
+                     fillstyle='none',color='lightsalmon')
+            axs.text(line[0][0][1]-0.03,line[0][1][1],str(num))
+        axs.plot(0,0,color='lightsalmon',linestyle='--',label='Theoretical Stage')
+        axs.plot([xD,xD],[0,xD],color='teal',linestyle='--')
+        axs.text(0.95*xD,xD/2,'x$_D$')
+        axs.plot([xF,xF],[0,xF],color='teal',linestyle='--')
+        axs.text(1.05*xF,xF/2,'x$_F$')
+        axs.plot([xW,xW],[0,xW],color='teal',linestyle='--')
+        axs.text(1.05*xW,xW/2,'x$_W$')
         axs.grid()
+        axs.legend()
         axs.set_xlabel('Liquid molar fraction of benzene [-]')
         axs.set_ylabel('Vapor molar fraction of benzene [-]')
         axs.set_xlim(0,1)
