@@ -88,6 +88,7 @@ class McCabe_Thiele:
         
         # Defining two points for the stripping line
         st_points = ([0,xQ],[-W/(R*D + q*F - W),yQ])
+        st_points = ([xW,xQ],[xW,yQ])
         self.st_points = ([xW,xQ],[xW,yQ])
         self.stline = interp1d(st_points[0],st_points[1])
         self.rect_points = ([xQ,xD],[yQ,xD])
@@ -200,6 +201,8 @@ class McCabe_Thiele:
         axs.grid()
         axs.set_xlabel('Liquid molar fraction of benzene [-]')
         axs.set_ylabel('Vapor molar fraction of benzene [-]')
+        axs.set_xlim(0,1)
+        axs.set_ylim(0,1)
             
         
         
