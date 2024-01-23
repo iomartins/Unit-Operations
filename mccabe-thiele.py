@@ -58,7 +58,6 @@ class McCabe_Thiele:
         
         xF, xD, xW = self.project_composition
         D, W = self.outlet_stream
-        F = self.inlet_stream
         
         # Defining the mixture string input to me be used in CoolProp
         mixture_composition = (
@@ -87,7 +86,6 @@ class McCabe_Thiele:
         self.qline = interp1d(feed_points[0],feed_points[1])
         
         # Defining two points for the stripping line
-        st_points = ([0,xQ],[-W/(R*D + q*F - W),yQ])
         st_points = ([xW,xQ],[xW,yQ])
         self.st_points = ([xW,xQ],[xW,yQ])
         self.stline = interp1d(st_points[0],st_points[1])
@@ -144,6 +142,7 @@ class McCabe_Thiele:
                 if xP3 >= xQ:
                     yP3 = self.rectline(xP3)
                 else:
+                    self.feed_stage = num
                     yP3 = self.stline(xP3)
                 P3.append((xP3,yP3))
                 
@@ -241,11 +240,78 @@ class McCabe_Thiele:
         axs.text(1.05*xW,xW/2,'x$_W$')
         axs.grid()
         axs.legend()
-        axs.set_xlabel('Liquid molar fraction of benzene [-]')
-        axs.set_ylabel('Vapor molar fraction of benzene [-]')
+        axs.set_xlabel('Liquid molar fraction of ' + str(self.mixture[0]) + ' [-]')
+        axs.set_ylabel('Vapor molar fraction of ' + str(self.mixture[0]) + ' [-]')
         axs.set_xlim(0,1)
         axs.set_ylim(0,1)
-            
+        
+        
+    def molar_fraction(self):
+        
+        xF, xD, xW = self.project_composition
+        stages = np.arange(1,self.number+1,1)
+        
+        lines = []
+        for line in self.points:
+            lines.append(line[0][1][1])
+        
+        fig, axs = plt.subplots()
+        axs.plot(stages,lines,linestyle='-.',marker='v',fillstyle='none',color='k')
+        axs.plot(1,xD,linestyle='--',marker='^',fillstyle='none',
+                 color='teal',label='Distillate composition')
+        axs.plot([1,self.feed_stage],[xF,xF],color='teal',linestyle='--')
+        axs.plot(self.feed_stage,xF,linestyle='--',marker='o',fillstyle='none',
+                 color='teal',label='Feed composition')
+        axs.plot([1,self.number],[xW,xW],color='teal',linestyle='--')
+        axs.plot(self.number,xW,linestyle='--',marker='s',fillstyle='none',
+                 color='teal',label='Waste composition')
+        axs.grid()
+        axs.legend()
+        axs.set_xlabel('Theorical stage')
+        axs.set_ylabel('Molar fraction of ' + str(self.mixture[0]) + ' [-]')
+        axs.set_xlim(1,self.number+0.2)
+        axs.set_ylim(0,1)
+        
+    def molar_flow(self):
+        
+        xF, xD, xW = self.project_composition
+        D, W = self.outlet_stream
+        F = self.inlet_stream
+        q = self.feed_quantity
+        
+        # Rectifying section
+        y = self.points[1][0][1][1]
+        x = self.points[1][0][0][1]
+        
+        L_r = (xD - y)*D/(y - x)
+        V_r = L_r + D
+        
+        # Stripping section
+        L_s = L_r + q*F
+        V_s = V_r + (1 - q)*F
+        
+        # Drawing the graph
+        L = []
+        V = []
+        stages = np.arange(1,self.number+1,1)
+        for j in stages:
+            if j <= self.feed_stage:
+                L.append(L_r)
+                V.append(V_r)
+            else:
+                L.append(L_s)
+                V.append(V_s)
+                
+        fig, axs = plt.subplots()
+        axs.plot(stages,L,linestyle='-.',marker='o',fillstyle='none',color='teal',
+                 label='Liquid')
+        axs.plot(stages,V,linestyle='-.',marker='s',fillstyle='none',
+                 color='lightcoral',label='Vapor')
+        axs.grid()
+        axs.legend()
+        axs.set_xlabel('Theoretical stage')
+        axs.set_ylabel('Molar flow [kmol h$^{-1}$]')
+        
         
         
 p = 101325
@@ -262,17 +328,6 @@ tower_1.inlet_configuration(F,T,composition)
 tower_1.outlet_stream
 tower_1.operation_lines(R)
 tower_1.lewis_sorel()
-tower_1.theoretical_stages()        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+tower_1.theoretical_stages()
+tower_1.molar_fraction()
+tower_1.molar_flow()
