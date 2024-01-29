@@ -12,14 +12,88 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 class McCabe_Thiele:
+    """
     
-    def __init__(self,fluid_mixture,p):
+    Class used to simulate an ideal distillation column using graphical method
+    of McCabe-Thiele to represent the result.
+    
+    
+    Attributes
+    -----------
+    
+    mixture : list
+        list with 2 elements, the components in the binary mixture
+    
+    pressure : float
+        column pressure, also used as input on CoolProp
+    
+    
+    Methods
+    -------
+    
+    set_volatility(alpha_AB)
+        uses the relative volatility to create an interpolator to calculate the
+        equilibrium vapor molar fraction given the liquid molar fraction
+    
+    set_externalfile(alpha)
+        uses an external file to create an interpolator to calculate the 
+        equilibrium vapor molar fraction given the liquid molar fraction
         
+    set_coolprop(mixture)
+        uses CoolProp to create an interpolator to calculate the equilibrium
+        vapor molar fraction given the liquid molar fraction
+    
+    inlet_configuration(F,T,comp)
+        given the inlet molar (mass) flow, inlet temperature and project composition,
+        the method calculates both outlet molar (mass) flows
+        
+    operation_lines(R)
+        given the reflux ratio, this method creates an interpolator for each
+        operation line, rectifying, stripping and waste
+        
+    lewis_sorel()
+        uses the lewis-sorel method to calculate the number of theoretical stages
+        and the molar fraction in each stage
+    
+    theoretical_stages()
+        uses the points calculated in the lewis_sorel method and plots the figure
+    
+    molar_fraction()
+        plots a figure with the vapor molar fraction per stage
+    
+    molar_flow()
+        plots a figure with the vapor molar flow per stage
+        
+    """
+    
+    def __init__(self,fluid_mixture,p=101325):
+        """
+
+        Parameters
+        ----------
+        
+        fluid_mixture : list
+            list with 2 elements, the components in the binary mixture
+            
+        p : float, optional
+            pressure inside the column. The default pressure is 101325 Pa
+
+        """
+    
         self.pressure = p
         self.mixture = fluid_mixture
     
     
     def set_volatilty(self,alpha_AB):
+        """
+        
+        Parameters
+        ----------
+        
+        alpha_AB : float
+            relative volatility between both components
+
+        """
         
         xA = np.arange(0,1.1,0.01)
         yA = alpha_AB*xA/(1 + (alpha_AB - 1)*xA)
@@ -114,7 +188,7 @@ class McCabe_Thiele:
         
         # Stage calculations loop
         while P3[-1][0] > xW:      # The procedure stops only when the minimum value,
-            num += 1            # xW, is attained
+            num += 1               # xW, is attained
             # Rectifying line as the base of the stage
             if P3[-1][0] >= xQ:
                 # New points
@@ -220,9 +294,12 @@ class McCabe_Thiele:
         fig, axs = plt.subplots()
         axs.plot([0,1],[0,1],'k')
         axs.plot(xA,yA,'k')
-        axs.plot(self.rect_points[0],self.rect_points[1],'#0080FF',label='Rectifying')
-        axs.plot(self.feed_points[0],self.feed_points[1],'#FF8000',label='Feed')
-        axs.plot(self.st_points[0],self.st_points[1],'#808080',label='Stripping')
+        axs.plot(self.rect_points[0],self.rect_points[1],'#0080FF',
+                 label='Rectifying line')
+        axs.plot(self.feed_points[0],self.feed_points[1],'#FF8000',
+                 label='Feed line')
+        axs.plot(self.st_points[0],self.st_points[1],'#808080',
+                 label='Stripping line')
         num = 0
         for line in self.points:
             num += 1
@@ -231,7 +308,7 @@ class McCabe_Thiele:
             axs.plot(line[0][0][1],line[0][1][1],linestyle=None,marker='o',
                      fillstyle='none',color='lightsalmon')
             axs.text(line[0][0][1]-0.03,line[0][1][1],str(num))
-        axs.plot(0,0,color='lightsalmon',linestyle='--',label='Theoretical Stage')
+        axs.plot(0,0,color='lightsalmon',linestyle='--',label='Theoretical stage')
         axs.plot([xD,xD],[0,xD],color='teal',linestyle='--')
         axs.text(0.95*xD,xD/2,'x$_D$')
         axs.plot([xF,xF],[0,xF],color='teal',linestyle='--')
@@ -267,7 +344,7 @@ class McCabe_Thiele:
                  color='teal',label='Waste composition')
         axs.grid()
         axs.legend()
-        axs.set_xlabel('Theorical stage')
+        axs.set_xlabel('Theoretical stage')
         axs.set_ylabel('Molar fraction of ' + str(self.mixture[0]) + ' [-]')
         axs.set_xlim(1,self.number+0.2)
         axs.set_ylim(0,1)
@@ -278,12 +355,14 @@ class McCabe_Thiele:
         D, W = self.outlet_stream
         F = self.inlet_stream
         q = self.feed_quantity
+        R = self.reflux_ratio
         
         # Rectifying section
-        y = self.points[1][0][1][1]
-        x = self.points[1][0][0][1]
+        # y = self.points[1][0][1][1]
+        # x = self.points[1][0][0][1]
         
-        L_r = (xD - y)*D/(y - x)
+        # L_r = (xD - y)*D/(y - x)
+        L_r = R*D
         V_r = L_r + D
         
         # Stripping section
