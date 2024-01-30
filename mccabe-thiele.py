@@ -367,7 +367,7 @@ class McCabe_Thiele:
         
         # Stripping section
         L_s = L_r + q*F
-        V_s = V_r + (1 - q)*F
+        V_s = V_r - (1 - q)*F
         
         # Drawing the graph
         L = []
