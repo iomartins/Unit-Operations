@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.interpolate import interp1d
+from scipy.optimize import fsolve
 
 class McCabe_Thiele:
     """
@@ -110,8 +111,63 @@ class McCabe_Thiele:
     
     def set_coolprop(self,mixture):
         
-        return
+        def psat1(T):
+            psat1 = CP.PropsSI('P','Q',1,'T',T,self.mixture[0])
+            return(psat1)
+        
+        def psat2(T):
+            psat2 = CP.PropsSI('P','Q',1,'T',T,self.mixture[1])
+            return(psat2)
+        
+        Tmin = CP.PropsSI('T','Q',0,'P',self.pressure,self.mixture[0])
+        Tmax = CP.PropsSI('T','Q',0,'P',self.pressure,self.mixture[1])
+        T = np.arange(Tmin,Tmax,100)
+        
+        x = []
+        y = []
+        p = self.pressure
+        
+        for j in T:
+            
+            def f(z):
+                
+                x1, y1 = z
+                z1 = p - x1*psat1(j) - (1 - x1)*psat2(j)
+                z2 = p - y1*p - (1 - y1)*p
+                
+                return([z1,z2])
+            
+            z0 = [0.5,0.5]
+            z = fsolve(f,z0)
+            x.append(z[0])
+            y.append(z[1])
+        
+        
     
+    def phase_diagram(self):
+        
+        x1 = np.arange(0,1.05,0.05)
+        Tl = []
+        Tv = []
+        p = self.pressure
+        
+        for j in x1:
+            mixture_composition = (
+                self.mixture[0] + '[' + str(j) + ']&' + self.mixture[1] +
+                '[' + str(1 - j) + ']')
+            Tl.append(CP.PropsSI('T','P',p,'Q',0,mixture_composition))
+            Tv.append(CP.PropsSI('T','P',p,'Q',1,mixture_composition))
+            
+        fig, axs = plt.subplots()
+        axs.plot(x1,Tl,'k-.',label='Saturated liquid')
+        axs.plot(x1,Tv,'k--',label='Saturated vapor')
+        axs.fill_between(x1,Tl,Tv,color='#C875C4',label='VLE Region')
+        axs.grid()
+        axs.legend()
+        axs.set_xlabel('Molar fraction of ' + self.mixture[0])
+        axs.set_ylabel('Temperature [K]')
+        axs.set_xlim(0,1)
+
     
     def inlet_configuration(self,F,T,comp):
         
@@ -331,6 +387,7 @@ class McCabe_Thiele:
         lines = []
         for line in self.points:
             lines.append(line[0][1][1])
+        self.vapor_composition = lines
         
         fig, axs = plt.subplots()
         axs.plot(stages,lines,linestyle='-.',marker='v',fillstyle='none',color='k')
@@ -349,6 +406,7 @@ class McCabe_Thiele:
         axs.set_xlim(1,self.number+0.2)
         axs.set_ylim(0,1)
         
+        
     def molar_flow(self):
         
         xF, xD, xW = self.project_composition
@@ -358,18 +416,13 @@ class McCabe_Thiele:
         R = self.reflux_ratio
         
         # Rectifying section
-        # y = self.points[1][0][1][1]
-        # x = self.points[1][0][0][1]
-        
-        # L_r = (xD - y)*D/(y - x)
         L_r = R*D
         V_r = L_r + D
         
         # Stripping section
         L_s = L_r + q*F
-        V_s = V_r - (1 - q)*F
+        V_s = V_r + (1 - q)*F
         
-        # Drawing the graph
         L = []
         V = []
         stages = np.arange(1,self.number+1,1)
@@ -380,7 +433,9 @@ class McCabe_Thiele:
             else:
                 L.append(L_s)
                 V.append(V_s)
-                
+        
+        # Drawing the graph
+
         fig, axs = plt.subplots()
         axs.plot(stages,L,linestyle='-.',marker='o',fillstyle='none',color='teal',
                  label='Liquid')
@@ -391,6 +446,34 @@ class McCabe_Thiele:
         axs.set_xlabel('Theoretical stage')
         axs.set_ylabel('Molar flow [kmol h$^{-1}$]')
         
+    
+    def temperature(self):
+        
+        def psat1(T):
+            psat1 = CP.PropsSI('P','Q',1,'T',T,self.mixture[0])
+            return(psat1)
+        
+        p = self.pressure
+        stages = np.arange(1,self.number+1,1)
+        y = self.vapor_composition
+        x = self.eqcurve(y)
+        
+        T = []
+        for j,stage in enumerate(stages,0):
+            x1 = x[j]
+            y1 = y[j]
+            def f(T):
+                res = y1*p - x1*psat1(T)
+                return(res)
+            
+            T0 = 273.15 + 50
+            T.append(fsolve(f,T0))
+        
+        fig, axs = plt.subplots()
+        axs.plot(stages,T,color='k',linestyle='-.',marker='o',fillstyle='none')
+        axs.grid()
+        axs.set_xlabel('Theoretical stage')
+        axs.set_ylabel('Temperature [K]')
         
         
 p = 101325
@@ -410,3 +493,5 @@ tower_1.lewis_sorel()
 tower_1.theoretical_stages()
 tower_1.molar_fraction()
 tower_1.molar_flow()
+tower_1.phase_diagram()
+tower_1.temperature()
