@@ -81,8 +81,24 @@ class McCabe_Thiele:
 
         """
     
-        self.pressure = p
         self.mixture = fluid_mixture
+        self.pressure = p
+        
+        # Errors and exception messages regarding the inlet mixture input
+        
+        if type(self.mixture) != list and type(self.mixture) != tuple:
+            raise TypeError('The mixture input must be a list or a tuple')
+        
+        if len(self.mixture) != 2:
+            raise ValueError('There must be two components in the mixture input')
+        
+        if self.mixture[0] == self.mixture[1]:
+            raise ValueError('There must be two different fluids')
+        
+        fluid_list = CP.get_global_param_string("FluidsList").split(',')
+        if fluid_mixture[0].capitalize() not in fluid_list or fluid_mixture[1].capitalize() not in fluid_list:
+            raise Exception('One or more fluids are absent in the CoolProp database')
+            raise Exception('Double check if they were correctly written')
     
     
     def set_volatilty(self,alpha_AB):
@@ -98,6 +114,7 @@ class McCabe_Thiele:
         
         xA = np.arange(0,1.1,0.01)
         yA = alpha_AB*xA/(1 + (alpha_AB - 1)*xA)
+        
         self.eqcurve = interp1d(yA,xA)
     
     
@@ -106,42 +123,37 @@ class McCabe_Thiele:
         df = pd.read_csv(path)
         xA = df['xA']
         yA = df['yA']
+        
         self.eqcurve = interp1d(yA,xA)
     
     
     def set_coolprop(self,mixture):
         
-        def psat1(T):
-            psat1 = CP.PropsSI('P','Q',1,'T',T,self.mixture[0])
-            return(psat1)
-        
-        def psat2(T):
-            psat2 = CP.PropsSI('P','Q',1,'T',T,self.mixture[1])
-            return(psat2)
-        
-        Tmin = CP.PropsSI('T','Q',0,'P',self.pressure,self.mixture[0])
-        Tmax = CP.PropsSI('T','Q',0,'P',self.pressure,self.mixture[1])
-        T = np.arange(Tmin,Tmax,100)
-        
-        x = []
-        y = []
+        xA = np.arange(0,1.01,0.01)
+        Tl = []
+        Tv = []
         p = self.pressure
         
-        for j in T:
+        try:
+            for j in xA:
+                mixture_composition = (
+                    self.mixture[0] + '[' + str(j) + ']&' + self.mixture[1] +
+                    '[' + str(1 - j) + ']')
+                Tl.append(CP.PropsSI('T','P',p,'Q',0,mixture_composition))
+                Tv.append(CP.PropsSI('T','P',p,'Q',1,mixture_composition))
             
-            def f(z):
-                
-                x1, y1 = z
-                z1 = p - x1*psat1(j) - (1 - x1)*psat2(j)
-                z2 = p - y1*p - (1 - y1)*p
-                
-                return([z1,z2])
+            Tl_curve = interp1d(xA,Tl)
+            Tv_curve = interp1d(Tv,xA)
+            yA = []
             
-            z0 = [0.5,0.5]
-            z = fsolve(f,z0)
-            x.append(z[0])
-            y.append(z[1])
+            for x in xA:
+                T = Tl_curve(x)
+                yA.append(Tv_curve(T))
+            
+            self.eqcurve = interp1d(yA,xA)
         
+        except:
+            raise ValueError('CoolProp was unable to perform bubble and dew temperature calculations, choose another input method')
         
     
     def phase_diagram(self):
@@ -169,11 +181,21 @@ class McCabe_Thiele:
         axs.set_xlim(0,1)
 
     
-    def inlet_configuration(self,F,T,comp):
+    def set_feedquality(self,q):
         
-        self.inlet_temperature = T
+        self.feed_quality = q
+
+
+    def inlet_configuration(self,F,comp,T=300):
+        
+        """
+        
+        
+        """
+                    
         self.inlet_stream = F
         self.project_composition = comp
+        self.inlet_temperature = T
         
         xF, xD, xW = comp
         D = ((xF - xW)/(xD - xW))*F
@@ -189,17 +211,25 @@ class McCabe_Thiele:
         xF, xD, xW = self.project_composition
         D, W = self.outlet_stream
         
-        # Defining the mixture string input to me be used in CoolProp
-        mixture_composition = (
-            self.mixture[0] + '[' + str(xF) + ']&' + self.mixture[1] +
-            '[' + str(1 - xF) + ']')
+        # Feed quality parameter (q) can be given as an input with the set_feedquality
+        # method or calculated from the temperature using CoolProp
+        try:
+            q = self.feed_quality
         
-        # Feed characteristics
-        H_V = CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mixture_composition)
-        H_L = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mixture_composition)
-        H_f = CP.PropsSI('HMOLAR','P',self.pressure,'T',self.inlet_temperature,
-                         mixture_composition)
-        q = (H_V - H_f)/(H_V - H_L)
+        except:
+            # Defining the mixture string input to me be used in CoolProp
+            mixture_composition = (
+                self.mixture[0] + '[' + str(xF) + ']&' + self.mixture[1] +
+                '[' + str(1 - xF) + ']')
+            
+            # Feed characteristics
+            H_V = CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mixture_composition)
+            H_L = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mixture_composition)
+            H_f = CP.PropsSI('HMOLAR','P',self.pressure,'T',self.inlet_temperature,
+                             mixture_composition)
+            q = (H_V - H_f)/(H_V - H_L)
+            self.feed_quality = q
+        
         # Defining the x coordinate where feed and rectification lines meet
         if q >= 0.99 and q <= 1.01:
             xQ = 1
@@ -207,9 +237,7 @@ class McCabe_Thiele:
         else:
             xQ = (xF/(1 - q) - xD/(R + 1))/(R/(R + 1) - q/(q - 1))
             yQ = q*xQ/(q - 1) + xF/(1 - q)
-        
-        self.feed_quantity = q
-        
+                    
         # Defining two points for the feed line
         feed_points = ([xF,xQ],[xF,yQ])
         self.feed_points = feed_points
@@ -412,7 +440,7 @@ class McCabe_Thiele:
         xF, xD, xW = self.project_composition
         D, W = self.outlet_stream
         F = self.inlet_stream
-        q = self.feed_quantity
+        q = self.feed_quality
         R = self.reflux_ratio
         
         # Rectifying section
@@ -433,6 +461,9 @@ class McCabe_Thiele:
             else:
                 L.append(L_s)
                 V.append(V_s)
+        
+        self.liquid_flow = L
+        self.vapor_flow = V
         
         # Drawing the graph
 
@@ -459,22 +490,57 @@ class McCabe_Thiele:
         x = self.eqcurve(y)
         
         T = []
-        for j,stage in enumerate(stages,0):
-            x1 = x[j]
-            y1 = y[j]
-            def f(T):
-                res = y1*p - x1*psat1(T)
-                return(res)
-            
-            T0 = 273.15 + 50
-            T.append(fsolve(f,T0))
+        try:
+            for j,stage in enumerate(stages,0):
+                x1 = x[j]
+                y1 = y[j]
+                def f(T):
+                    res = y1*p - x1*psat1(T)
+                    return(res)
+                
+                T0 = 273.15 + 50
+                T.append(fsolve(f,T0))
+        except:
+            raise ValueError('Saturation pressure could not be calculated with CoolProp')
         
+        self.stages_temperature = T
         fig, axs = plt.subplots()
         axs.plot(stages,T,color='k',linestyle='-.',marker='o',fillstyle='none')
         axs.grid()
         axs.set_xlabel('Theoretical stage')
         axs.set_ylabel('Temperature [K]')
         
+    def heat_exchangers_demand(self,Hvap=1):
+        
+        L = self.liquid_flow
+        V = self.vapor_flow
+        
+        top = V[0]
+        bottom = L[-1]
+        
+        if Hvap != 1:
+            condenser = top*(-Hvap)
+            reboiler = bottom*Hvap
+            
+        else:
+            T_top = self.stages_temperature[0]
+            T_bottom = self.stages_temperature[-1]
+            xF, xD, xW = self.project_composition
+            mixture_composition = (
+                self.mixture[0] + '[' + str(xF) + ']&' + self.mixture[1] +
+                '[' + str(1 - xF) + ']')
+            try:
+                H_V = CP.PropsSI('HMOLAR','T',T_bottom,'Q',1,mixture_composition)
+                H_L = CP.PropsSI('HMOLAR','T',T_top,'Q',0,mixture_composition)
+                Hvap = H_V - H_L
+                
+                condenser = top*(-Hvap)
+                reboiler = bottom*Hvap
+            
+            except:
+                raise ValueError('Molar enthalpy could not be calculated with CoolProp')
+        
+        return(condenser,reboiler)
         
 p = 101325
 fluid_mixture = ('benzene','toluene')
@@ -484,10 +550,9 @@ composition = [0.45,0.95,0.1]
 R = 4
 
 tower_1 = McCabe_Thiele(fluid_mixture,p)
-tower_1.pressure
-tower_1.set_externalfile('C:\\Users\\iomartins\\ex26.4.1.csv')
-tower_1.inlet_configuration(F,T,composition)
-tower_1.outlet_stream
+# tower_1.set_externalfile('C:\\Users\\iomartins\\ex26.4.1.csv')
+tower_1.set_coolprop(fluid_mixture)
+tower_1.inlet_configuration(F,composition,T)
 tower_1.operation_lines(R)
 tower_1.lewis_sorel()
 tower_1.theoretical_stages()
