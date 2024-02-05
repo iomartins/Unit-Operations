@@ -273,6 +273,8 @@ class McCabe_Thiele:
         # Stage calculations loop
         while P3[-1][0] > xW:      # The procedure stops only when the minimum value,
             num += 1               # xW, is attained
+            if num == 100:
+                raise ValueError('Convergence was not obtained')
             # Rectifying line as the base of the stage
             if P3[-1][0] >= xQ:
                 # New points
@@ -512,36 +514,45 @@ class McCabe_Thiele:
         
     def heat_exchangers_demand(self,Hvap=1):
         
-        L = self.liquid_flow
-        V = self.vapor_flow
-        
-        top = V[0]
-        bottom = L[-1]
+        L = self.liquid_flow[-1]
+        V = self.vapor_flow[0]
         
         if Hvap != 1:
-            condenser = top*(-Hvap)
-            reboiler = bottom*Hvap
+            condenser = V*(-Hvap[0])/3600
+            reboiler = L*Hvap[1]/3600
             
         else:
             T_top = self.stages_temperature[0]
             T_bottom = self.stages_temperature[-1]
-            xF, xD, xW = self.project_composition
-            mixture_composition = (
-                self.mixture[0] + '[' + str(xF) + ']&' + self.mixture[1] +
-                '[' + str(1 - xF) + ']')
+            y = self.vapor_composition[0]
+            x = self.eqcurve(self.vapor_composition[-1])
             try:
-                H_V = CP.PropsSI('HMOLAR','T',T_bottom,'Q',1,mixture_composition)
-                H_L = CP.PropsSI('HMOLAR','T',T_top,'Q',0,mixture_composition)
+                # Condenser
+                comp = (self.mixture[0] + '[' + str(y) + ']&' +
+                        self.mixture[1] + '[' + str(1 - y) + ']')
+                H_V = CP.PropsSI('HMOLAR','T',T_bottom,'Q',1,comp)
+                H_L = CP.PropsSI('HMOLAR','T',T_top,'Q',0,comp)
                 Hvap = H_V - H_L
+                condenser = V*(-Hvap)/3600
                 
-                condenser = top*(-Hvap)
-                reboiler = bottom*Hvap
+                # Reboiler
+                comp = (self.mixture[0] + '[' + str(x) + ']&' +
+                        self.mixture[1] + '[' + str(1 - x) + ']')
+                H_V = CP.PropsSI('HMOLAR','T',T_bottom,'Q',1,comp)
+                H_L = CP.PropsSI('HMOLAR','T',T_top,'Q',0,comp)
+                Hvap = H_V - H_L
+                reboiler = L*Hvap/3600
             
             except:
                 raise ValueError('Molar enthalpy could not be calculated with CoolProp')
+            
+            print('Heat exchanged at condenser: ' + str(condenser/1e3) + ' MW')
+            print('Heat exchanged at reboiler: ' + str(reboiler/1e3) + ' MW')
         
         return(condenser,reboiler)
-        
+
+
+# Data from Example 26.4-1 from Geankoplis et al. (2018)
 p = 101325
 fluid_mixture = ('benzene','toluene')
 F = 100
@@ -550,7 +561,6 @@ composition = [0.45,0.95,0.1]
 R = 4
 
 tower_1 = McCabe_Thiele(fluid_mixture,p)
-# tower_1.set_externalfile('C:\\Users\\iomartins\\ex26.4.1.csv')
 tower_1.set_coolprop(fluid_mixture)
 tower_1.inlet_configuration(F,composition,T)
 tower_1.operation_lines(R)
@@ -558,5 +568,5 @@ tower_1.lewis_sorel()
 tower_1.theoretical_stages()
 tower_1.molar_fraction()
 tower_1.molar_flow()
-tower_1.phase_diagram()
 tower_1.temperature()
+tower_1.heat_exchangers_demand()
