@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.optimize import fsolve
+from math import log10
 
 class McCabe_Thiele:
     """
@@ -74,6 +75,15 @@ class McCabe_Thiele:
     
     number : int
         number of theoretical stages
+        
+    minimum_stages: float
+        minimum number of stages calculated with Fenske equation
+    
+    minimum_reflux : float
+        minimum reflux ratio calculated with Underwood equation
+        
+    Gilliland_stages : float
+        number of stages calculated with Gilliland correlation
     
     vapor_composition : list
         list containing the vapor molar fraction leaving each stage
@@ -126,6 +136,10 @@ class McCabe_Thiele:
     lewis_sorel()
         uses the lewis-sorel method to calculate the number of theoretical stages
         and the molar fraction in each stage
+        
+    FUG_correlations()
+        employs the Fenske, Underwood and Gilliland correlations to calculate
+        values for Rmin, Nmin and N
     
     theoretical_stages()
         uses the points calculated in the lewis_sorel method and plots the figure
@@ -278,6 +292,7 @@ class McCabe_Thiele:
                 yA.append(Tv_curve(T))
             
             self.eqcurve = interp1d(yA,xA)
+            self._eqcurve = interp1d(xA,yA)
         
         except:
             raise ValueError('CoolProp was unable to perform bubble and dew temperature calculations, choose another input method')
@@ -460,18 +475,105 @@ class McCabe_Thiele:
         self.rect_points = ([xQ,xD],[yQ,xD])
         
         
+    def FUG_correlations(self):
+        
+        """
+        Method containing the correlations of Fenske, Underwood and Gilliland to
+        estimate theoretical values for minimal number of stages and reflux ratio
+        and the number of stages for a given reflux ratio. For a thorough explanation
+        regarding the correlations, refer to Chapter 8 of Wankat (2012) and
+        Chapter 26 of Geankoplis et al. (2018).
+        
+        Parameters
+        ----------
+        None.
+
+        Returns
+        -------
+        None.
+        
+        """
+        
+        q = self.feed_quality
+        xF, xD, xW = self.project_composition
+        D, W = self.outlet_stream
+        R = self.reflux_ratio
+        
+        # Determining the average volatility
+        yT = self.vapor_composition[0]
+        xT = self.eqcurve(yT)
+        yB = self.vapor_composition[-1]
+        xB = self.eqcurve(yB)
+        
+        alphaT = (yT/xT)*((1 - xT)/(1 - yT))
+        alphaB = (yB/xB)*((1 - xB)/(1 - yB))
+        alpha = (alphaT*alphaB)**(1/2)
+        
+        # Fenske equation
+        ratio = (xD/(1 - xD))*((1 - xW)/xW)
+        Nmin = log10(ratio)/log10(alpha)
+        self.minimum_stages = Nmin
+        
+        # Determining curve interpolator for an extended q-line
+        a = q/(q - 1)
+        b = -xF/(q - 1)
+        # y = a*x + b
+        x1 = 0
+        y1 = a*x1 + b
+        x2 = 1
+        y2 = a*x2 + b
+        self._qline = interp1d([0,1],[y1,y2])
+        
+        def pinch_point(x):
+            
+            res = self._eqcurve(x) - self._qline(x)
+            
+            return(res)
+        
+        xP = fsolve(pinch_point,0.5)[0]
+        yP = self._qline(xP)
+        
+        # Underwood equation
+        ratio = (xD - yP)/(xD - xP)
+        Rmin = ratio/(1 - ratio)
+        self.minimum_reflux = Rmin
+        
+        
+        # Gilliand (1940) correlation, adapted by Liddle (1968)
+        X = (R - Rmin)/(R + 1)
+        
+        if X >= 0 and X <= 0.01:
+            Y = 1 - 18.5715*X
+        
+        elif X > 0.01 and X < 0.9:
+            Y = 0.545827 - 0.591422*X + 0.002743/X
+            
+        elif X >= 0.9 and X <= 1:
+            Y = 0.16595 - 0.16595*X
+        
+        else:
+            raise ValueError('Values outside the range for Gilliland correlation')
+        
+        N = (Y + Nmin)/(1 - Y)
+        self.Gilliland_stages = N
+        
+        print('Minimum number of stages: ' + str(Nmin))
+        print('Minimum reflux ratio: ' + str(Rmin))
+        print('Number of stages with Gilliland correlation: ' + str(N))
+        
+        
     def lewis_sorel(self):
         """
         Method to apply the Lewis-Sorel method to calculate the number of theoretical
         steps in an ideal binary distillation. The present formulation considers
         a stage to be formed by three distinct points, namely P1, P2 and P3.
         
-        P2 -------- P1     P2 is located at the equilibrium line while P1 and P3
-        |                  P3 are located at the operation line. P1 and P2 have
-        |                  the same y coordinate; P2 and P3 have the same x coordinate.
-        |                  P1 of a given stage has the P3 coordinates of the last
-        |                  stage.
-        |
+        P2__________P1     P2 is located at the equilibrium line while P1 and P3
+         |                 P3 are located at the operation line. P1 and P2 have
+         |                 the same y coordinate; P2 and P3 have the same x coordinate.
+         |                 P1 of a given stage has the P3 coordinates of the last
+         |                 stage.
+         |
         P3
 
         Parameters
@@ -885,4 +987,5 @@ tower_1.theoretical_stages()
 tower_1.molar_fraction()
 tower_1.molar_flow()
 tower_1.temperature()
+tower_1.FUG_correlations()
 tower_1.heat_exchangers_demand()
