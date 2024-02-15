@@ -189,8 +189,8 @@ class McCabe_Thiele:
         
         fluid_list = CP.get_global_param_string("FluidsList").split(',')
         if fluid_mixture[0].capitalize() not in fluid_list or fluid_mixture[1].capitalize() not in fluid_list:
-            raise Exception('One or more fluids are absent in the CoolProp database')
-            raise Exception('Double check if they were correctly written')
+            raise Warning('One or more fluids are absent in the CoolProp database')
+            raise Warning('Double check if they were correctly written')
     
     
     def set_volatilty(self,alpha_AB):
@@ -360,7 +360,6 @@ class McCabe_Thiele:
 
 
     def inlet_configuration(self,F,comp,T=300):
-        
         """
         Method to set the quality number of the feed stream. This method must be
         used when CoolProp cannot calculate the molar enthalpy at the feed and
