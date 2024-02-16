@@ -216,7 +216,8 @@ class McCabe_Thiele:
         yA = alpha_AB*xA/(1 + (alpha_AB - 1)*xA)
         
         self.eqcurve = interp1d(yA,xA)
-    
+        self._eqcurve = interp1d(xA,yA)
+        
     
     def set_externalfile(self,path):
         """
@@ -250,6 +251,7 @@ class McCabe_Thiele:
         yA = df['yA']
         
         self.eqcurve = interp1d(yA,xA)
+        self._eqcurve = interp1d(xA,yA)
     
     
     def set_coolprop(self):
@@ -960,8 +962,8 @@ class McCabe_Thiele:
             except:
                 raise ValueError('Molar enthalpy could not be calculated with CoolProp')
             
-            print('Heat exchanged at condenser: ' + str(condenser/1e3) + ' MW')
-            print('Heat exchanged at reboiler: ' + str(reboiler/1e3) + ' MW')
+            print('Heat added to the condenser: ' + str(- condenser/1e3) + ' MW')
+            print('Heat removed from the reboiler: ' + str(reboiler/1e3) + ' MW')
         
         self.condenser = condenser/1e3
         self.reboiler = reboiler/1e3
