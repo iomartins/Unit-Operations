@@ -183,7 +183,7 @@ class Ponchon_Savarit:
         
         """
         
-        F = F/3.6               # Convertendo de kmol/h para mol/s
+        F = F/3.6              # Convertendo de kmol/h para mol/s
         self.inlet_stream = F
         self.project_composition = comp
         self.inlet_temperature = T
@@ -207,8 +207,8 @@ class Ponchon_Savarit:
             mixture_composition = (
                 self.mixture[0] + '[' + str(j) + ']&' + self.mixture[1] +
                 '[' + str(1 - j) + ']')
-            H_V.append(CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mixture_composition))
-            H_L.append(CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mixture_composition))
+            H_V.append(CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mixture_composition)/1e3)
+            H_L.append(CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mixture_composition)/1e3)
         
         self.vapor_enthalpy = interp1d(x1,H_V)
         self.liquid_enthalpy = interp1d(x1,H_L)
@@ -220,8 +220,8 @@ class Ponchon_Savarit:
         mixture_composition = (
             self.mixture[0] + '[' + str(xD) + ']&' + self.mixture[1] +
             '[' + str(1 - xD) + ']')
-        H1 = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mixture_composition)
-        hD = CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mixture_composition)
+        H1 = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mixture_composition)/1e3
+        hD = CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mixture_composition)/1e3
         Hlv = H1 - hD
         qCD = (R + 1)*Hlv
         
@@ -235,13 +235,13 @@ class Ponchon_Savarit:
         comp = (
             self.mixture[0] + '[' + str(xW) + ']&' + self.mixture[1] +
             '[' + str(1 - xW) + ']')
-        hW = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,comp)
+        hW = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,comp)/1e3
         comp = (
             self.mixture[0] + '[' + str(xF) + ']&' + self.mixture[1] +
             '[' + str(1 - xF) + ']')
         # The feed enthalpy must have a temperature input, since its physical
         # stage cannot be fixed
-        hF = CP.PropsSI('HMOLAR','P',self.pressure,'T',T,comp)
+        hF = CP.PropsSI('HMOLAR','P',self.pressure,'T',T,comp)/1e3
         # Heat added to the reboiler
         Qr = D*hD + W*hW - F*hF - Qc
         qRW = Qr/W
@@ -273,7 +273,7 @@ class Ponchon_Savarit:
         dist_line = interp1d(_x,_y)
         # For each stage a new operation line interpolator will be created
         OL = [dist_line]
-        yV = []
+        yV = [xD]
         xL = [xD]
         Hv = [self.vapor_enthalpy(xD)]
         Hl = [self.liquid_enthalpy(xD)]
@@ -286,9 +286,16 @@ class Ponchon_Savarit:
             # Rectifying section
             if xL[-1] >= xF:
                 rect += 1
+                # Finding the liquid molar fraction in equilibrium with the last
+                # calculated vapor molar fraction
+                y = yV[-1]
+                x = float(self.eqcurve(y))
+                xL.append(x)
+                _hL = self.liquid_enthalpy(xL[-1])
+                Hl.append(_hL)
                 # Finding the point where the operation line intersects the
                 # saturated vapor line
-                OL.append(interp1d([xL[-1],xD],[Hl[-1],hD + self.qCD],
+                OL.append(interp1d([xL[-1],xD],[Hl[-1],hD - self.qCD],
                           fill_value='extrapolate'))
                 def func1(x): 
                     return(OL[-1](x) - self.vapor_enthalpy(x))
@@ -296,20 +303,18 @@ class Ponchon_Savarit:
                 yV.append(y)
                 _hV = self.vapor_enthalpy(yV[-1])
                 Hv.append(_hV)
-                if num == 1: 
-                    xL.pop(0)    # Cleaning the vector in the first loop
+            # Stripping section
+            elif xL[-1] < xF:
+                stp += 1
                 # Finding the point in the saturated liquid enthalpy line with
                 # the equilibrium curve
                 x = self.eqcurve(y)
                 xL.append(x)
                 _hL = self.liquid_enthalpy(xL[-1])
                 Hl.append(_hL)
-            # Stripping section
-            elif xL[-1] < xF:
-                stp += 1
                 # Finding the point where the operation line intersects the
                 # saturated liquid line
-                OL.append(interp1d([xW,xL[-1]],[hW + self.qRW,Hl[-1]],
+                OL.append(interp1d([xW,xL[-1]],[hW - self.qRW,Hl[-1]],
                                    fill_value='extrapolate'))
                 def func2(x):
                     return(OL[-1](x) - self.vapor_enthalpy(x))
@@ -317,14 +322,6 @@ class Ponchon_Savarit:
                 yV.append(y)
                 _hV = self.vapor_enthalpy(yV[-1])
                 Hv.append(_hV)
-                if num == 1: 
-                    xL.pop(0)    # Cleaning the vector in the first loop
-                # Finding the point in the saturated liquid enthalpy line with
-                # the equilibrium curve
-                x = self.eqcurve(y)
-                xL.append(x)
-                _hL = self.liquid_enthalpy(xL[-1])
-                Hl.append(_hL)
         self.number = num
         self.sections = (rect,stp)
         self.enthalpies = (Hv,Hl)
@@ -339,7 +336,7 @@ class Ponchon_Savarit:
         comp = (
             self.mixture[0] + '[' + str(xF) + ']&' + self.mixture[1] +
             '[' + str(1 - xF) + ']')
-        hF = CP.PropsSI('HMOLAR','P',self.pressure,'T',T,comp)
+        hF = CP.PropsSI('HMOLAR','P',self.pressure,'T',T,comp)/1e3
         Hv, Hl = self.enthalpies
         yV, xL = self.compositions
         
@@ -356,32 +353,36 @@ class Ponchon_Savarit:
         axs.plot(xD,hD - self.qCD,linestyle='none',marker='o',color='#030764')
         axs.text(xD + 0.02,hD - self.qCD,'D')
         axs.plot(xD,hD,linestyle='none',marker='o',color='#030764')
-        axs.text(xD + 0.02,hD,'R')
+        # axs.text(xD + 0.02,hD,'R')
         axs.plot([xW,xW],[0,hW - self.qRW],color='teal',linestyle='--')
         axs.plot(xW,hW - self.qRW,linestyle='none',marker='o',color='#030764')
         axs.text(xW + 0.02,hW - self.qRW,'W')
         axs.plot(xF,hF,linestyle='none',marker='o',color='#030764')
-        axs.text(xF + 0.02,hF,'F')
+        axs.text(xF + 0.02,hF-3,'F')
         axs.plot([0],[0],color='lightsalmon',linestyle='--',label='Operation line')
         axs.plot([0],[0],color='#DDA0DD',linestyle='-.',label='Equilibrium line')
-        axs.plot([xW,xD],[hW - self.qRW,hD - self.qCD],linestyle=':')
+        # axs.plot([xW,xD],[hW - self.qRW,hD - self.qCD],linestyle=':')
         for j in range(self.number):
             if j <= self.sections[0]:
                 axs.plot([xD,xL[j]],[hD - self.qCD,Hl[j]],color='lightsalmon',
-                         linestyle='--')
+                         linestyle='--',marker='o',fillstyle = 'none')
                 axs.plot([yV[j],xL[j+1]],[Hv[j],Hl[j+1]],color='#DDA0DD',
-                         linestyle='-.')
+                         linestyle='-.',marker='s',fillstyle = 'none')
+                axs.text(0.98*yV[j],1.2*Hv[j],'V$_{}$'.format(j+1))
+                axs.text(0.98*xL[j],Hl[j]-20,'L$_{}$'.format(j+1))
             else:
                 axs.plot([xW,yV[j]],[hW - self.qRW,Hv[j]],color='lightsalmon',
-                         linestyle='--')
+                         linestyle='--',marker='o',fillstyle = 'none')
                 axs.plot([yV[j-1],xL[j]],[Hv[j-1],Hl[j]],color='#DDA0DD',
-                         linestyle='-.')
+                         linestyle='-.',marker='s',fillstyle = 'none')
+                axs.text(0.98*yV[j],1.2*Hv[j],'V$_{}$'.format({j+1}))
+                axs.text(0.98*xL[j],Hl[j]-20,'L$_{}$'.format({j+1}))
         axs.set_xticks([0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1])
         axs.set_xlim(0,1)
         axs.grid()
-        axs.legend()
+        axs.legend(loc='lower right')
         axs.set_xlabel('Molar fraction of ' + self.mixture[0] + '[-]')
-        axs.set_ylabel('Molar enthalpy [J mol$^{-1}$]')
+        axs.set_ylabel('Molar enthalpy [kJ mol$^{-1}$]')
                 
 
 # Data from Example 26.4-1 from Geankoplis et al. (2018)
@@ -390,7 +391,7 @@ fluid_mixture = ('benzene','toluene')
 F = 100
 T = 327.6
 composition = [0.45,0.95,0.1]
-R = 1.5
+R = 4
 
 tower_1 = Ponchon_Savarit(fluid_mixture,p)
 tower_1.set_coolprop()
