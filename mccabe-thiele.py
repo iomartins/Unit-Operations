@@ -1,16 +1,11 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Dec 14 11:41:41 2023
-
-@author: iomartins
-"""
-
 import CoolProp.CoolProp as CP
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.optimize import fsolve
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import spsolve
 from math import log10
 
 class McCabe_Thiele:
@@ -793,7 +788,7 @@ class McCabe_Thiele:
         axs.grid()
         axs.legend()
         axs.set_xlabel('Theoretical stage')
-        axs.set_ylabel('Molar fraction of ' + str(self.mixture[0]) + ' [-]')
+        axs.set_ylabel('Vapor molar fraction of ' + str(self.mixture[0]) + ' [-]')
         axs.set_xlim(1,self.number+0.2)
         axs.set_ylim(0,1)
         
@@ -969,6 +964,137 @@ class McCabe_Thiele:
         self.reboiler = reboiler/1e3
         
         return(condenser,reboiler)
+    
+    
+    def matricial_method(self):
+        
+        xF, xD, xW = self.project_composition
+        D, W = self.outlet_stream
+        F = self.inlet_stream
+        q = self.feed_quality
+        R = self.reflux_ratio
+        N = self.number
+        
+        error_m = 1
+        error_e = 1
+        L = self.liquid_flow
+        V = self.vapor_flow
+        _T = self.stages_temperature
+        
+        # Solution loop
+        while error_e > 1e-6:
+            
+            1
+    
+            
+    def mass_balance(self,K,L,V,D,W,N,xD,xW):
+        
+        A = np.zeros((N,N))
+        B = np.zeros((N,1))
+        
+        for j in range(N):
+            
+            if j == 0:      # Condenser stage
+                A[j,j] = 1 + D/L[j]
+                A[j,j+1] = - V[j+1]*K[j+1]/L[j+1]
+                
+                B[j,0] = 0
+            
+            elif j > 0 and j < N - 1:       # Intermediate stages
+                A[j,j-1] = - 1
+                A[j,j] = 1 + V[j]*K[j]/L[j]
+                A[j,j+1] = - V[j+1]*K[j+1]/L[j+1]
+                
+                B[j,0] = 0
+                if j == self.feed_stage:    # Feed stage
+                    B[j,0] = F*xD
+            
+            else:           # Reboiler stage
+                A[j,j-1] = - 1
+                A[j,j] = 1 + V[j]*K[j]/L[j]
+                
+                B[j,0] = 0
+        
+        A = csc_matrix(A)           # Linear system solving procedure is faster 
+        B = csc_matrix(B)           # when the matrices are sparse
+        l = spsolve(A, B)
+        
+        L = np.array(L)
+        x = l/L
+        
+        return(x)
+    
+    
+    def energy_balance(self,x,y,T,p,F,N,R,D,W,xF,xD,xW):
+        
+        A = np.zeros((N,N))
+        B = np.zeros((N,1))
+        
+        Hv = np.zeros(N)
+        Hl = np.zeros(N)
+        
+        F_ = np.zeros(N)
+        F_[self.feed_stage] = F
+        
+        mix = (self.mixture[0] + '[' + str(xF) + ']&' + 
+               self.mixture[1] + '[' + str(1 - xF) + ']')
+        Hf = CP.PropsSI('HMOLAR','P',self.pressure,'T',self.inlet_temperature,
+                         mix)
+        mix = (self.mixture[0] + '[' + str(xW) + ']&' + 
+               self.mixture[1] + '[' + str(1 - xW) + ']')
+        Hw = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mix)
+        mix = (self.mixture[0] + '[' + str(xD) + ']&' + 
+               self.mixture[1] + '[' + str(1 - xD) + ']')
+        Hd = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mix)
+        
+        Qw = D*Hd*1e3 + W*Hw*1e3 - F*Hf*1e3 - self.condenser*1e6
+        
+        for j in range(N):      # Calculating the enthalpies in each stage
+            
+            mix = (self.mixture[0] + '[' + str(y[j]) + ']&' + 
+                   self.mixture[1] + '[' + str(1 - y[j]) + ']')
+            Hv = CP.PropsSI('HMOLAR','P',self.pressure,'Q',1,mix)
+            mix = (self.mixture[0] + '[' + str(x[j]) + ']&' + 
+                   self.mixture[1] + '[' + str(1 - x[j]) + ']')
+            Hl = CP.PropsSI('HMOLAR','P',self.pressure,'Q',0,mix)   
+        
+        for j in range(N):
+            
+            if j == 0:      # Condenser stage
+                A[j,j] = 1
+                
+                B[j,0] = (R + 1)*D
+            
+            elif j > 0 and j < N - 1:           # Intermediate stages
+                A[j,j] = Hv[j] - Hl[j-1]
+                A[j,j+1] = Hl[j] - Hv[j+1]
+                
+                B[j,0] = (D*(Hl[j] - Hl[j-1]) + Hl[j-1]*sum(F_[0:j]) + 
+                        Hl[j]*sum(F_[0:j+1]))
+                
+            else:         # Reboiler stage
+                A[j,j] = Hv[j] - Hl[j-1]
+                
+                B[j,0] = Qw + W*(Hl[j-1] - Hw)
+        
+        A = csc_matrix(A)           # Linear system solving procedure is faster 
+        B = csc_matrix(B)           # when the matrices are sparse
+        V = spsolve(A, B)
+        
+        L = np.zeros(N)
+        
+        for j in range(N):
+            
+            if j == 0:
+                L[j] = R*D
+            
+            elif j > 0 and j < N - 1:
+                L[j] = V[j+1] - D + sum(F_[0:j+1])
+            
+            else:
+                L[j] = W
+        
+        return(L,V)
 
 
 # Data from Example 26.4-1 from Geankoplis et al. (2018)
