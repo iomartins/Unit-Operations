@@ -447,9 +447,9 @@ class McCabe_Thiele:
                 raise ValueError('CoolProp could not calculate the enthalpy values for the given mixture')
         
         # Defining the x coordinate where feed and rectification lines meet
-        if q >= 0.99 and q <= 1.01:    # Placeholder, it will be corrected
-            xQ = 1                     # in later updates 
-            yQ = 1
+        if q >= 0.99 and q <= 1.01:
+            xQ = xF 
+            yQ = (R/(R + 1))*xQ + xD/(R + 1)
         else:
             xQ = (xF/(1 - q) - xD/(R + 1))/(R/(R + 1) - q/(q - 1))
             yQ = q*xQ/(q - 1) + xF/(1 - q)
