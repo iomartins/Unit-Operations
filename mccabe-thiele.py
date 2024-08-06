@@ -182,10 +182,10 @@ class McCabe_Thiele:
         if self.mixture[0] == self.mixture[1]:
             raise ValueError('There must be two different fluids')
         
-        fluid_list = CP.get_global_param_string("FluidsList").split(',')
-        if fluid_mixture[0].capitalize() not in fluid_list or fluid_mixture[1].capitalize() not in fluid_list:
-            raise Warning('One or more fluids are absent in the CoolProp database')
-            raise Warning('Double check if they were correctly written')
+        # fluid_list = CP.get_global_param_string("FluidsList").split(',')
+        # if fluid_mixture[0].capitalize() not in fluid_list or fluid_mixture[1].capitalize() not in fluid_list:
+        #     raise Warning('One or more fluids are absent in the CoolProp database')
+        #     raise Warning('Double check if they were correctly written')
     
     
     def set_volatilty(self,alpha_AB):
